@@ -99,6 +99,22 @@ class TemplateFit():
         # print(m)
         return m
 
+    def identify_local_maxima(self, data):
+        '''
+            Function to pull out the initial conditions for a LXe pulse fit. Identifies local maxima and tags them.
+        '''
+        maxima = []
+        times = []
+
+        from scipy.signal import find_peaks
+        # for local maxima
+        peaks, _ = find_peaks(data[1], height=100, threshold=10, width=5)
+        for x in peaks:
+            maxima.append(data[1][x])
+            times.append(data[0][x])
+
+        return maxima, times
+
     def do_fit(self):
         self.chi2 = 1e12
         self.niterations = 0
@@ -106,16 +122,25 @@ class TemplateFit():
         self.intermediate_xs = self.data[0]
         self.intermediate_ys = self.data[1]
 
-        # self.current_guess = [1,0,0]
-        new_maximum = np.amax( self.intermediate_ys )
-        maximum_time = self.intermediate_xs[ np.where( self.intermediate_ys  == new_maximum )[0] ][0]
-        self.current_guess = [new_maximum,0, -1.0*maximum_time]
+
+        maxima, times = self.identify_local_maxima(self.data)
+
+        if(len(maxima) < 2):
+            # self.current_guess = [1,0,0]
+            new_maximum = np.amax( self.intermediate_ys )
+            maximum_time = self.intermediate_xs[ np.where( self.intermediate_ys  == new_maximum )[0] ][0]
+            self.current_guess = [new_maximum,0, -1.0*maximum_time]
+        else:
+            # raise NotImplementedError
+            self.current_guess = []
+            for time, maxi in zip(times,maxima):
+                self.current_guess += [maxi, 0, -time]
 
         while(True):
             if(self.verbose):
                 print("**********************************************************************************")
                 print("Fitting with Current guess:", self.current_guess)
-                print(new_maximum, maximum_time)
+                # print(new_maximum, maximum_time)
             self.niterations += 1
             if(self.niterations > self.convergencelimit):
                 print(f"Warning: Fit did not converge in {self.convergencelimit} iterations")
