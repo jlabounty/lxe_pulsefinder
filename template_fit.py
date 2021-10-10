@@ -12,7 +12,7 @@ class LXeTemplate():
     def __init__(self) -> None:
         pass
 
-    def form_template(self, xs, ys):
+    def form_template(self, xs, ys, weights=None):
         
         #shift such that the peak of the template lies at x = 0
         these_ys = np.array(ys)
@@ -22,7 +22,7 @@ class LXeTemplate():
         #             axis=0, bc_type='not-a-knot', 
         #             extrapolate=True    )
 
-        # self.template = UnivariateSpline(these_xs, these_ys)
+        # self.template = UnivariateSpline(these_xs, these_ys, weights=weights)
         self.template = interp1d(these_xs, these_ys, fill_value=0, bounds_error=False)
 
     def save(self, outfile):
@@ -37,7 +37,11 @@ class LXeTemplate():
 
 
 class TemplateFit():
-    def __init__(self, data:np.ndarray, template:LXeTemplate or str, chi2limit=2, scalex=True, scaley=True, verbose=True) -> None:
+    def __init__(self, data:np.ndarray, template:LXeTemplate or str, chi2limit=2, 
+                 scalex=True, scaley=True, verbose=True, adt=5, 
+                pulse_cutoff=100, pulse_threshold=1,
+                minimum_energy = 10,
+                fit_limit=5) -> None:
         self.data = data 
         if(type(template) is str):
             self.template = LXeTemplate.load(template).template
@@ -49,7 +53,15 @@ class TemplateFit():
         self.current_guess = [0,0,0]
         self.chi2 = -1
         self.verbose=verbose
+        self.npar = 3 # number of parameters for each iteration in the template_function function
 
+        self.pulse_cutoff = pulse_cutoff       # height parameter passed to scipy.find_peaks
+        self.pulse_threshold = pulse_threshold # threshold parameter passed to scipy.find_peaks
+
+        self.minimum_energy = minimum_energy # minimum pulse height of a pulse to fit
+        self.fit_limit = fit_limit      # number of fits which can be simultainiously performed
+        #TODO: Implement ADT enforcement (will need to think about how to do this for n>2 pulses)
+        self.adt = adt                  # artificial dead time, below which two pulses can not be resolved
         self.chi2limit = chi2limit      # limit below which we say a fit has converged
         self.scalex = scalex            # whether we can scale the template amplitude to make the fit converge better
         self.scaley = scaley            # whether we can stretch/compress the template to make the fit better.
@@ -64,7 +76,7 @@ class TemplateFit():
             Returns: combined template evaluated at the parameters
         '''
 
-        nparams = 3
+        nparams = self.npar
         number_of_fits = int(len(p) / nparams)
         assert len(p) % nparams == 0, ValueError()
 
@@ -84,36 +96,77 @@ class TemplateFit():
         m = Minuit(minimizer, param_guess )  # starting values for minimization
         # m.limits[0]
 
-        nparams = 3
+        nparams = self.npar
         number_of_fits = int(len(param_guess) / nparams)
         assert len(param_guess) % nparams == 0, ValueError()
 
         for i in range(number_of_fits):
-            m.limits[i*nparams    ] = (0, None)
-            m.fixed[i*nparams + 1 ] = True
-            # m.limits[i*nparams + 2] = (0.001, None)
+            m.limits[i*nparams    ] = (self.minimum_energy, None)   # limit on pulse height 
+            m.fixed[i*nparams + 1 ] = True                          # limit on pulse template stretching
+            # m.limits[i*nparams + 2] = (0.001, None)               # limit on pulse time
 
-        m.migrad(2)  # finds minimum of least_squares function
+        m.migrad()  # finds minimum of least_squares function
         m.hesse()   # accurately computes uncertainties
+        # m.minos()
 
         # print(m)
         return m
 
     def identify_local_maxima(self, data):
         '''
-            Function to pull out the initial conditions for a LXe pulse fit. Identifies local maxima and tags them.
+            Function to pull out the initial conditions for a LXe pulse fit. 
+            Identifies local maxima and tags them.
         '''
         maxima = []
         times = []
 
         from scipy.signal import find_peaks
         # for local maxima
-        peaks, _ = find_peaks(data[1], height=100, threshold=10, width=5)
+        peaks, _ = find_peaks(data[1],
+                              height=self.pulse_cutoff, 
+                              threshold=self.pulse_threshold, 
+                              width=self.adt) #TODO: Make the height parameter vary based on noise in pulse
         for x in peaks:
-            maxima.append(data[1][x])
+            maxima.append(data[1][x]*1.2)
             times.append(data[0][x])
 
         return maxima, times
+
+    def identify_new_peak(self, xs, residuals, guess):
+        '''
+            Identifies the next peak to be fit based on the residuals of the current fit
+        '''
+        # mask the residuals based on the current peaks and the ADT
+        residuals = np.copy(residuals) # make a copy so we don't disrupt the original
+        current_peaks = [-1.0*guess[i*self.npar+2] for i in range(int(len(guess)/self.npar))]
+        if(self.verbose):
+            print("Masking based on:", current_peaks)
+
+        for i, xi in enumerate(xs):
+            for peak in current_peaks:
+                if(xi >= peak - self.adt and xi <= peak + self.adt):
+                    residuals[i] = 0
+
+        # identify the peaks in the masked residuals
+        new_maximum = np.amax( residuals )
+        maximum_time = self.intermediate_xs[ np.where( residuals == new_maximum )[0] ][0]
+
+        return new_maximum, maximum_time
+
+    def peaks_too_close(self, new, guess):
+        '''
+            Returns true if the new peak is too close to any of the existing peaks
+        '''
+        current_peaks = [-1.0*guess[i*self.npar+2] for i in range(int(len(guess)/self.npar))]
+        if(self.verbose):
+            print("Masking based on:", current_peaks)
+
+        xi = new[-1]*-1.0
+        for peak in current_peaks:
+            if(xi >= peak - self.adt and xi <= peak + self.adt):
+                return True
+        
+        return False
 
     def do_fit(self):
         self.chi2 = 1e12
@@ -124,6 +177,7 @@ class TemplateFit():
 
 
         maxima, times = self.identify_local_maxima(self.data)
+        self.npulses = len(maxima)
 
         if(len(maxima) < 2):
             # self.current_guess = [1,0,0]
@@ -158,7 +212,7 @@ class TemplateFit():
             self.chi2 = m.fmin.reduced_chi2
 
             # if(self.chi2 < self.chi2limit):
-            #     break
+            # break
 
             # try adding another pulse to the mix, and see if that reduces the chi2
             # print( self.intermediate_ys , self.template_function(self.intermediate_xs, self.current_guess) )
@@ -167,13 +221,16 @@ class TemplateFit():
                 plt.plot( self.template_function(self.intermediate_xs, self.current_guess), label="Fit (before additional)")
                 plt.legend()
                 plt.show()
+
             residuals = self.intermediate_ys - self.template_function(self.intermediate_xs, self.current_guess)
-            new_maximum = np.amax( residuals )
-            maximum_time = self.intermediate_xs[ np.where( residuals == new_maximum )[0] ][0]
+            new_maximum, maximum_time = self.identify_new_peak(self.intermediate_xs, residuals, 
+                                                               self.current_guess)
+
             if(self.verbose):
                 print(new_maximum, maximum_time)
 
-            m2 = self.do_single_fit(self.intermediate_xs, residuals, [new_maximum, 0, -1.0*maximum_time])
+            # m2 = self.do_single_fit(self.intermediate_xs, residuals, [new_maximum, 0, -1.0*maximum_time])
+            m2 = self.do_single_fit(self.intermediate_xs, self.intermediate_ys, self.current_guess+[new_maximum, 0, -1.0*maximum_time])
             if(self.verbose):
                 print('   -> Residual Fit valid:', m2.valid)
                 print('   -> Residual Fit params:', m2.values)
@@ -187,30 +244,42 @@ class TemplateFit():
                 plt.legend()
                 plt.show()
 
-            if(m2.fmin.reduced_chi2 < m.fmin.reduced_chi2):
-                self.current_guess += list(m2.values)
+            self.m = m
+            if(self.npulses >= self.fit_limit):
+                print(f"Warning: Fit has reached the limit of allowable pulses ({self.fit_limit})")
+                break
+            elif( self.peaks_too_close( m2.values, self.current_guess ) ):
+                print(f"Warning: This peak was too close to an existing peak. Terminating fit.")
+                break
+            elif(m2.fmin.reduced_chi2 < m.fmin.reduced_chi2):
+                self.current_guess += list(m2.values[-3:])
+                self.npulses += 1
             else:
+                if(self.verbose > 0):
+                    print(f"Fit converged with {self.npulses} simultainious fits")
                 break
                 # pass
             
             # break
 
-    def plot(self):
+    def plot(self, resid_scale="symlog"):
         '''
             Plots the current fit iteration
         '''
-        fig, ax = plt.subplots(figsize=(15,5))
+        fig, axs = plt.subplots(2,1,figsize=(15,8), sharex=True)
+        ax = axs[0]
+        plt.sca(ax)
         plt.plot(*self.data, label='Data')
         xs = np.linspace(np.amin(self.data[0]), np.amax(self.data[0]), 1000)
 
         param_string = ''
         ylim = ax.get_ylim()
-        for i in range(int(len(self.current_guess)/3)):
+        for i in range(int(len(self.current_guess)/self.npar)):
             if(self.verbose):
-                print(i, self.current_guess[i*3:i*3+3])
-            param_string += f'\nTemplate {i} with Parameters: {[round(x,3) for x in self.current_guess[i*3:i*3+3]]}'
-            plt.plot([-self.current_guess[i*3+2],-self.current_guess[i*3+2]], ylim, "r:")
-            plt.plot(xs, self.template_function(xs, self.current_guess[i*3:i*3+3]), color="xkcd:light grey")
+                print(i, self.current_guess[i*self.npar:i*self.npar+self.npar])
+            param_string += f'\nTemplate {i} with Parameters: {[round(x,3) for x in self.current_guess[i*self.npar:i*self.npar+self.npar]]}'
+            plt.plot([-self.current_guess[i*self.npar+2],-self.current_guess[i*self.npar+2]], ylim, "r:")
+            plt.plot(xs, self.template_function(xs, self.current_guess[i*self.npar:i*self.npar+self.npar]), color="xkcd:light grey")
 
         param_string += f"\nchi2 = {self.chi2}"
 
@@ -220,9 +289,17 @@ class TemplateFit():
 
         plt.grid()
         plt.legend()
+
+        plt.sca(axs[1])
+        residuals = self.data[1] - self.template_function(self.data[0], self.current_guess)
+        plt.plot(self.data[0], residuals)
+        plt.yscale(resid_scale)
+        plt.grid()
+
+
         plt.tight_layout()
 
-        return fig,ax 
+        return fig,axs
 
             
 def make_fake_data_from_template(template, times, amplitudes, noise=True, noisefloor=10):
@@ -231,7 +308,7 @@ def make_fake_data_from_template(template, times, amplitudes, noise=True, noisef
     '''
     assert len(times) == len(amplitudes)
 
-    limits = (np.amin(times) - 10, np.amax(times) + 400)
+    limits = (np.amin(times) - 100, np.amax(times) + 400)
     xs = np.linspace(*limits, int(limits[1] - limits[0]))
     ys = np.zeros_like(xs)
 
