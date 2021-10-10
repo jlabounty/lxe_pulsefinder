@@ -7,6 +7,7 @@ import iminuit
 from iminuit.cost import LeastSquares
 from iminuit import Minuit
 from scipy.interpolate import CubicSpline, UnivariateSpline, interp1d
+import pickle
 
 class LXeTemplate():
     def __init__(self) -> None:
@@ -54,7 +55,7 @@ class TemplateFit():
         self.chi2 = -1
         self.verbose=verbose
         self.npar = 3 # number of parameters for each iteration in the template_function function
-        self.time_limits = (-1*np.amin(data[0]), -1*np.amax(data[0]))
+        self.time_limits = (-1*np.amax(data[0]), -1*np.amin(data[0]))
 
         self.pulse_cutoff = pulse_cutoff       # height parameter passed to scipy.find_peaks
         self.pulse_threshold = pulse_threshold # threshold parameter passed to scipy.find_peaks
@@ -67,6 +68,14 @@ class TemplateFit():
         self.scalex = scalex            # whether we can scale the template amplitude to make the fit converge better
         self.scaley = scaley            # whether we can stretch/compress the template to make the fit better.
         self.convergencelimit = 10      # number of iterations to try before giving up
+
+    def save(self, outfile):
+        '''
+            Saves the template fit to an output file
+        '''
+        with open(outfile, 'wb') as fout:
+            pickle.dump(self, fout)
+        print("Template written to:", outfile)
 
     def template_function(self, x:np.ndarray, p:np.ndarray):
         '''
@@ -104,7 +113,7 @@ class TemplateFit():
         for i in range(number_of_fits):
             m.limits[i*nparams    ] = (self.minimum_energy, None)   # limit on pulse height 
             m.fixed[i*nparams + 1 ] = True                          # limit on pulse template stretching
-            m.limits[i*nparams + 2] = (*self.time_limits)           # limit on pulse time
+            m.limits[i*nparams + 2] = self.time_limits              # limit on pulse time
 
         m.migrad()  # finds minimum of least_squares function
         m.hesse()   # accurately computes uncertainties
