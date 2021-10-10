@@ -54,6 +54,7 @@ class TemplateFit():
         self.chi2 = -1
         self.verbose=verbose
         self.npar = 3 # number of parameters for each iteration in the template_function function
+        self.time_limits = (-1*np.amin(data[0]), -1*np.amax(data[0]))
 
         self.pulse_cutoff = pulse_cutoff       # height parameter passed to scipy.find_peaks
         self.pulse_threshold = pulse_threshold # threshold parameter passed to scipy.find_peaks
@@ -103,7 +104,7 @@ class TemplateFit():
         for i in range(number_of_fits):
             m.limits[i*nparams    ] = (self.minimum_energy, None)   # limit on pulse height 
             m.fixed[i*nparams + 1 ] = True                          # limit on pulse template stretching
-            # m.limits[i*nparams + 2] = (0.001, None)               # limit on pulse time
+            m.limits[i*nparams + 2] = (*self.time_limits)           # limit on pulse time
 
         m.migrad()  # finds minimum of least_squares function
         m.hesse()   # accurately computes uncertainties
