@@ -225,18 +225,43 @@ class TemplateFit():
 
             self.current_guess = list(m.values)
             self.chi2 = m.fmin.reduced_chi2
+            self.m = m
 
             # if(self.chi2 < self.chi2limit):
-            # break
+            #     break
 
-            # try adding another pulse to the mix, and see if that reduces the chi2
-            # print( self.intermediate_ys , self.template_function(self.intermediate_xs, self.current_guess) )
             if(self.verbose):
+                fig,ax = plt.subplots(figsize=(15,5))
                 plt.plot(self.intermediate_ys , label="Data")
                 plt.plot( self.template_function(self.intermediate_xs, self.current_guess), label="Fit (before additional)")
                 plt.legend()
+                plt.yscale("symlog")
+                plt.grid()
                 plt.show()
 
+
+            # remove pulses in this combined fit for which the amplitude/time is at the limit
+            # TODO: Test/refine this portion of the logic
+            if(self.verbose > 1):
+                print("Removing extraneus pulses at limit")
+            for i in range(int(len(self.current_guess)/self.npar)):
+                print( round(m.values[(i+1)*self.npar-3],3) , round(m.limits[(i+1)*self.npar-3][0],3), 
+                        round(m.values[(i+1)*self.npar-1],3) , round(m.limits[(i+1)*self.npar-1][0],3))
+                if(
+                    round(m.values[(i+1)*self.npar-3],3) == round(m.limits[(i+1)*self.npar-3][0],3) or 
+                    round(m.values[(i+1)*self.npar-1],3) == round(m.limits[(i+1)*self.npar-1][0],3)
+                ):
+                    if(self.verbose > 1):
+                        print("Found intermediate pulse at limit, removing from fit")
+                        print('   -> Before', self.current_guess)
+                    self.current_guess = self.current_guess[:i*self.npar] + self.current_guess[i*self.npar + 3:]
+                    if(self.verbose > 1):
+                        print('   -> After', self.current_guess)
+                    self.npulses -= 1
+                    continue
+
+            # try adding another pulse to the mix, and see if that reduces the chi2
+            # print( self.intermediate_ys , self.template_function(self.intermediate_xs, self.current_guess) )
             residuals = self.intermediate_ys - self.template_function(self.intermediate_xs, self.current_guess)
             new_maximum, maximum_time = self.identify_new_peak(self.intermediate_xs, residuals, 
                                                                self.current_guess)
@@ -244,6 +269,7 @@ class TemplateFit():
             if(self.verbose):
                 print(new_maximum, maximum_time)
 
+            
             m2 = self.do_single_fit(self.intermediate_xs, residuals, [new_maximum, 0, -1.0*maximum_time])
             # m2 = self.do_single_fit(self.intermediate_xs, self.intermediate_ys, self.current_guess+[new_maximum, 0, -1.0*maximum_time])
             if(self.verbose):
@@ -251,15 +277,18 @@ class TemplateFit():
                 print('   -> Residual Fit params:', m2.values)
                 print("   -> Residual Fit chi2:", m2.fmin.reduced_chi2)
                 # input("so?")
-
+                fig,ax = plt.subplots(figsize=(15,5))
                 plt.plot(self.intermediate_xs, self.intermediate_ys, label="Data")
                 plt.plot(self.intermediate_xs, residuals, label="Residuals")
                 plt.plot(self.intermediate_xs, self.template_function(self.intermediate_xs, [new_maximum,0, -1.0*maximum_time]), label="New Guess")
                 plt.plot(self.intermediate_xs, self.template_function(self.intermediate_xs, list(m2.values)), label="New Fit")
                 plt.legend()
+                plt.grid()
+                plt.yscale("symlog")
                 plt.show()
 
-            self.m = m
+
+
             if(self.npulses >= self.fit_limit):
                 if(self.verbose):
                     print(f"Warning: Fit has reached the limit of allowable pulses ({self.fit_limit})")
@@ -268,11 +297,11 @@ class TemplateFit():
                 if(self.verbose):
                     print(f"Warning: This peak was too close to an existing peak. Terminating fit.")
                 break
-            elif( m2.values[-3] == m2.limits[-3][0]):
+            elif( round(m2.values[-3],3) == round(m2.limits[-3][0],3)):
                 if(self.verbose):
                     print("Warning: rejecting this pulse because the amplitude parameter is at the limit")
                 break
-            elif( m2.values[-1] == m2.limits[-1][0]):
+            elif( round(m2.values[-1],3) == round(m2.limits[-1][0],3)):
                 if(self.verbose):
                     print("Warning: rejecting this pulse because the time parameter is at the limit")
                 break
