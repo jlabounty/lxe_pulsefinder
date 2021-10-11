@@ -44,6 +44,7 @@ class TemplateFit():
                 minimum_energy = 10,
                 do_complex_maxima_identification=False,
                 pulse_rounding = 3,
+                required_template_time=100, 
                 fit_limit=5) -> None:
         self.data = data 
         if(type(template) is str):
@@ -57,7 +58,9 @@ class TemplateFit():
         self.chi2 = -1
         self.verbose=verbose
         self.npar = 3 # number of parameters for each iteration in the template_function function
-        self.time_limits = (-1*np.amax(data[0]), -1*np.amin(data[0]))
+
+        #establish time limits such that the peaks can not be before the start of the data or within X ns of the end
+        self.time_limits = (-1*np.amax(data[0]) + required_template_time, -1*np.amin(data[0]))
         self.pulse_rounding = pulse_rounding # where to round fit parameters when deciding whether they are equal
 
         self.pulse_cutoff = pulse_cutoff       # height parameter passed to scipy.find_peaks
@@ -276,8 +279,8 @@ class TemplateFit():
                 print(new_maximum, maximum_time)
 
             
-            m2 = self.do_single_fit(self.intermediate_xs, residuals, [new_maximum, 0, -1.0*maximum_time])
-            # m2 = self.do_single_fit(self.intermediate_xs, self.intermediate_ys, self.current_guess+[new_maximum, 0, -1.0*maximum_time])
+            # m2 = self.do_single_fit(self.intermediate_xs, residuals, [new_maximum, 0, -1.0*maximum_time])
+            m2 = self.do_single_fit(self.intermediate_xs, self.intermediate_ys, self.current_guess+[new_maximum, 0, -1.0*maximum_time])
             if(self.verbose):
                 print('   -> Residual Fit valid:', m2.valid)
                 print('   -> Residual Fit params:', m2.values)
