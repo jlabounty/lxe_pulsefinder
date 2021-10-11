@@ -43,6 +43,7 @@ class TemplateFit():
                 pulse_cutoff=100, pulse_threshold=1,
                 minimum_energy = 10,
                 do_complex_maxima_identification=False,
+                pulse_rounding = 3,
                 fit_limit=5) -> None:
         self.data = data 
         if(type(template) is str):
@@ -57,6 +58,7 @@ class TemplateFit():
         self.verbose=verbose
         self.npar = 3 # number of parameters for each iteration in the template_function function
         self.time_limits = (-1*np.amax(data[0]), -1*np.amin(data[0]))
+        self.pulse_rounding = pulse_rounding # where to round fit parameters when deciding whether they are equal
 
         self.pulse_cutoff = pulse_cutoff       # height parameter passed to scipy.find_peaks
         self.pulse_threshold = pulse_threshold # threshold parameter passed to scipy.find_peaks
@@ -245,11 +247,9 @@ class TemplateFit():
             if(self.verbose > 1):
                 print("Removing extraneus pulses at limit")
             for i in range(int(len(self.current_guess)/self.npar)):
-                print( round(m.values[(i+1)*self.npar-3],3) , round(m.limits[(i+1)*self.npar-3][0],3), 
-                        round(m.values[(i+1)*self.npar-1],3) , round(m.limits[(i+1)*self.npar-1][0],3))
                 if(
-                    round(m.values[(i+1)*self.npar-3],3) == round(m.limits[(i+1)*self.npar-3][0],3) or 
-                    round(m.values[(i+1)*self.npar-1],3) == round(m.limits[(i+1)*self.npar-1][0],3)
+                    round(m.values[(i+1)*self.npar-3],self.pulse_rounding) == round(m.limits[(i+1)*self.npar-3][0],self.pulse_rounding) or 
+                    round(m.values[(i+1)*self.npar-1],self.pulse_rounding) == round(m.limits[(i+1)*self.npar-1][0],self.pulse_rounding)
                 ):
                     if(self.verbose > 1):
                         print("Found intermediate pulse at limit, removing from fit")
@@ -297,11 +297,11 @@ class TemplateFit():
                 if(self.verbose):
                     print(f"Warning: This peak was too close to an existing peak. Terminating fit.")
                 break
-            elif( round(m2.values[-3],3) == round(m2.limits[-3][0],3)):
+            elif( round(m2.values[-3],self.pulse_rounding) == round(m2.limits[-3][0],self.pulse_rounding)):
                 if(self.verbose):
                     print("Warning: rejecting this pulse because the amplitude parameter is at the limit")
                 break
-            elif( round(m2.values[-1],3) == round(m2.limits[-1][0],3)):
+            elif( round(m2.values[-1],self.pulse_rounding) == round(m2.limits[-1][0],self.pulse_rounding)):
                 if(self.verbose):
                     print("Warning: rejecting this pulse because the time parameter is at the limit")
                 break
@@ -331,7 +331,7 @@ class TemplateFit():
         for i in range(int(len(self.current_guess)/self.npar)):
             if(self.verbose):
                 print(i, self.current_guess[i*self.npar:i*self.npar+self.npar])
-            param_string += f'\nTemplate {i} with Parameters: {[round(x,3) for x in self.current_guess[i*self.npar:i*self.npar+self.npar]]}'
+            param_string += f'\nTemplate {i} with Parameters: {[round(x,self.pulse_rounding) for x in self.current_guess[i*self.npar:i*self.npar+self.npar]]}'
             plt.plot([-self.current_guess[i*self.npar+2],-self.current_guess[i*self.npar+2]], ylim, "r:")
             plt.plot(xs, self.template_function(xs, self.current_guess[i*self.npar:i*self.npar+self.npar]), color="xkcd:light grey")
 
