@@ -244,21 +244,27 @@ class TemplateFit():
 
             # remove pulses in this combined fit for which the amplitude/time is at the limit
             # TODO: Test/refine this portion of the logic
-            if(self.verbose > 1):
+            if(self.verbose > 0):
                 print("Removing extraneus pulses at limit")
+            found_pulse_at_limit = False
             for i in range(int(len(self.current_guess)/self.npar)):
                 if(
                     round(m.values[(i+1)*self.npar-3],self.pulse_rounding) == round(m.limits[(i+1)*self.npar-3][0],self.pulse_rounding) or 
                     round(m.values[(i+1)*self.npar-1],self.pulse_rounding) == round(m.limits[(i+1)*self.npar-1][0],self.pulse_rounding)
                 ):
-                    if(self.verbose > 1):
+                    if(self.verbose > 0):
                         print("Found intermediate pulse at limit, removing from fit")
                         print('   -> Before', self.current_guess)
                     self.current_guess = self.current_guess[:i*self.npar] + self.current_guess[i*self.npar + 3:]
-                    if(self.verbose > 1):
+                    if(self.verbose > 0):
                         print('   -> After', self.current_guess)
                     self.npulses -= 1
-                    continue
+                    found_pulse_at_limit = True
+
+            if(found_pulse_at_limit):
+                continue
+
+
 
             # try adding another pulse to the mix, and see if that reduces the chi2
             # print( self.intermediate_ys , self.template_function(self.intermediate_xs, self.current_guess) )
