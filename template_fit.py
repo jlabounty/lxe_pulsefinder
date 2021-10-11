@@ -42,6 +42,7 @@ class TemplateFit():
                  scalex=True, scaley=True, verbose=True, adt=5, 
                 pulse_cutoff=100, pulse_threshold=1,
                 minimum_energy = 10,
+                do_complex_maxima_identification=False,
                 fit_limit=5) -> None:
         self.data = data 
         if(type(template) is str):
@@ -59,6 +60,7 @@ class TemplateFit():
 
         self.pulse_cutoff = pulse_cutoff       # height parameter passed to scipy.find_peaks
         self.pulse_threshold = pulse_threshold # threshold parameter passed to scipy.find_peaks
+        self.do_complex_maxima_identification = do_complex_maxima_identification #whether to find initial peak(s) using peak fit or simple maximum
 
         self.minimum_energy = minimum_energy # minimum pulse height of a pulse to fit
         self.fit_limit = fit_limit      # number of fits which can be simultainiously performed
@@ -181,13 +183,15 @@ class TemplateFit():
     def do_fit(self):
         self.chi2 = 1e12
         self.niterations = 0
+        self.npulses = 1
 
         self.intermediate_xs = self.data[0]
         self.intermediate_ys = self.data[1]
 
-
-        maxima, times = self.identify_local_maxima(self.data)
-        self.npulses = len(maxima)
+        if(self.do_complex_maxima_identification):
+            maxima, times = self.identify_local_maxima(self.data)
+        else:
+            maxima, times = [], []
 
         if(len(maxima) < 2):
             # self.current_guess = [1,0,0]
@@ -196,6 +200,7 @@ class TemplateFit():
             self.current_guess = [new_maximum,0, -1.0*maximum_time]
         else:
             # raise NotImplementedError
+            self.npulses = len(maxima)
             self.current_guess = []
             for time, maxi in zip(times,maxima):
                 self.current_guess += [maxi, 0, -time]
@@ -239,8 +244,8 @@ class TemplateFit():
             if(self.verbose):
                 print(new_maximum, maximum_time)
 
-            # m2 = self.do_single_fit(self.intermediate_xs, residuals, [new_maximum, 0, -1.0*maximum_time])
-            m2 = self.do_single_fit(self.intermediate_xs, self.intermediate_ys, self.current_guess+[new_maximum, 0, -1.0*maximum_time])
+            m2 = self.do_single_fit(self.intermediate_xs, residuals, [new_maximum, 0, -1.0*maximum_time])
+            # m2 = self.do_single_fit(self.intermediate_xs, self.intermediate_ys, self.current_guess+[new_maximum, 0, -1.0*maximum_time])
             if(self.verbose):
                 print('   -> Residual Fit valid:', m2.valid)
                 print('   -> Residual Fit params:', m2.values)
