@@ -261,10 +261,20 @@ class TemplateFit():
 
             self.m = m
             if(self.npulses >= self.fit_limit):
-                print(f"Warning: Fit has reached the limit of allowable pulses ({self.fit_limit})")
+                if(self.verbose):
+                    print(f"Warning: Fit has reached the limit of allowable pulses ({self.fit_limit})")
                 break
             elif( self.peaks_too_close( m2.values, self.current_guess ) ):
-                print(f"Warning: This peak was too close to an existing peak. Terminating fit.")
+                if(self.verbose):
+                    print(f"Warning: This peak was too close to an existing peak. Terminating fit.")
+                break
+            elif( m2.values[-3] == m2.limits[-3][0]):
+                if(self.verbose):
+                    print("Warning: rejecting this pulse because the amplitude parameter is at the limit")
+                break
+            elif( m2.values[-1] == m2.limits[-1][0]):
+                if(self.verbose):
+                    print("Warning: rejecting this pulse because the time parameter is at the limit")
                 break
             elif(m2.fmin.reduced_chi2 < m.fmin.reduced_chi2):
                 self.current_guess += list(m2.values[-3:])
