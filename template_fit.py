@@ -59,6 +59,12 @@ class TemplateFit():
         self.verbose=verbose
         self.npar = 3 # number of parameters for each iteration in the template_function function
 
+        # if the minimum energy parameter is <= 0, then dynamically set it 
+        #    based on the noise level in the sample
+        # if(minimum_energy <= 0):
+
+
+
         #establish time limits such that the peaks can not be before the start of the data or within X ns of the end
         self.time_limits = (-1*np.amax(data[0]) + required_template_time, -1*np.amin(data[0]))
         self.pulse_rounding = pulse_rounding # where to round fit parameters when deciding whether they are equal
@@ -185,7 +191,25 @@ class TemplateFit():
         
         return False
 
-    def do_fit(self):
+    def times(self):
+        '''
+            Returns the current peak times
+        '''
+        nparams = self.npar
+        number_of_fits = int(len(self.current_guess) / nparams)
+        assert len(self.current_guess) % nparams == 0, ValueError()
+
+        return [self.current_guess[i*nparams + 2] for i in range(number_of_fits)]
+
+    def energies(self):
+        nparams = self.npar
+        number_of_fits = int(len(self.current_guess) / nparams)
+        assert len(self.current_guess) % nparams == 0, ValueError()
+
+        return [self.current_guess[i*nparams] for i in range(number_of_fits)]
+
+
+    def do_fit(self):  # sourcery no-metrics
         self.chi2 = 1e12
         self.niterations = 0
         self.npulses = 1
@@ -325,12 +349,17 @@ class TemplateFit():
             
             # break
 
-    def plot(self, resid_scale="symlog"):
+    def plot(self, resid_scale="symlog", axi=None):
         '''
             Plots the current fit iteration
         '''
-        fig, axs = plt.subplots(2,1,figsize=(15,8), sharex=True)
-        ax = axs[0]
+        if(axi is None):
+            fig, axs = plt.subplots(2,1,figsize=(15,8), sharex=True)
+            ax = axs[0]
+        else:
+            fig=None
+            ax = axi
+            axs = [axi]
         plt.sca(ax)
         plt.plot(*self.data, label='Data')
         xs = np.linspace(np.amin(self.data[0]), np.amax(self.data[0]), 1000)
@@ -353,26 +382,30 @@ class TemplateFit():
         plt.grid()
         plt.legend()
 
-        plt.sca(axs[1])
-        residuals = self.data[1] - self.template_function(self.data[0], self.current_guess)
-        plt.plot(self.data[0], residuals)
-        plt.yscale(resid_scale)
-        plt.grid()
+        if(axi is None):
+            plt.sca(axs[1])
+            residuals = self.data[1] - self.template_function(self.data[0], self.current_guess)
+            plt.plot(self.data[0], residuals)
+            plt.yscale(resid_scale)
+            plt.grid()
 
 
-        plt.tight_layout()
+            plt.tight_layout()
 
         return fig,axs
 
             
-def make_fake_data_from_template(template, times, amplitudes, noise=True, noisefloor=10):
+def make_fake_data_from_template(template, times, amplitudes, noise=True, noisefloor=10, 
+                                 sampling_rate=1, padding=(100,400)):
     '''
         Helper function to generate fake data from a pulse shape template
+        Assumes times are in ns for 1 GS/s sampling rate
+        Pads generated data with 'padding' tuple
     '''
     assert len(times) == len(amplitudes)
 
-    limits = (np.amin(times) - 100, np.amax(times) + 400)
-    xs = np.linspace(*limits, int(limits[1] - limits[0]))
+    limits = (np.amin(times) - padding[0], np.amax(times) + padding[1])
+    xs = np.linspace(*limits, int((limits[1] - limits[0])*sampling_rate))
     ys = np.zeros_like(xs)
 
     for i, (t, a) in enumerate(zip(times,amplitudes)):
