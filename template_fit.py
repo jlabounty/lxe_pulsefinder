@@ -13,10 +13,14 @@ class LXeTemplate():
     def __init__(self) -> None:
         pass
 
-    def form_template(self, xs, ys, weights=None):
+    def form_template(self, xs, ys, weights=None, normalize=0):
         
         #shift such that the peak of the template lies at x = 0
         these_ys = np.array(ys)
+        if(normalize == 1): # normalize by peak
+            these_ys /= np.amax(these_ys)
+        elif(normalize == 2): # normalize by integral
+            these_ys /= np.sum(these_ys)
         these_xs = np.array(xs) - xs[ np.where(these_ys == np.amax(these_ys))[0] ][0]
 
         # self.template = CubicSpline(these_xs, these_ys, 
@@ -36,8 +40,8 @@ class LXeTemplate():
         with open(infile, 'rb') as fin:
             return pickle.load(fin)
 
-
 class TemplateFit():
+    #@profile   
     def __init__(self, data:np.ndarray, template:LXeTemplate or str, chi2limit=2, 
                  scalex=True, scaley=True, verbose=True, adt=5, 
                 pulse_cutoff=100, pulse_threshold=1,
@@ -90,6 +94,19 @@ class TemplateFit():
             pickle.dump(self, fout)
         print("Template written to:", outfile)
 
+    def trim_zeros(self):
+        mask = np.where(self.data[1] == 0, False, True)
+        # print(mask)
+        mask = np.nonzero(mask)[0]
+        min_element = mask[0]
+        max_element = mask[-1]
+        # print(min_element, max_element)
+
+        self.data = (self.data[0][min_element:max_element],
+                    self.data[1][min_element:max_element])
+
+        
+
     def template_function(self, x:np.ndarray, p:np.ndarray):
         '''
             Uses self.template to form a function which can be used by the iMinuit least squares fitter
@@ -113,10 +130,12 @@ class TemplateFit():
 
         return ys
 
+    #@profile
     def do_single_fit(self,xs,ys,param_guess):
         yerrs = np.ones_like(xs)
         minimizer = LeastSquares( xs, ys, yerrs, self.template_function  )
         m = Minuit(minimizer, param_guess )  # starting values for minimization
+        # m.strategy = 0
         # m.limits[0]
 
         nparams = self.npar
@@ -135,6 +154,7 @@ class TemplateFit():
         # print(m)
         return m
 
+    #@profile
     def identify_local_maxima(self, data):
         '''
             Function to pull out the initial conditions for a LXe pulse fit. 
@@ -209,6 +229,7 @@ class TemplateFit():
         return [self.current_guess[i*nparams] for i in range(number_of_fits)]
 
 
+    #@profile
     def do_fit(self):  # sourcery no-metrics
         self.chi2 = 1e12
         self.niterations = 0
@@ -354,7 +375,14 @@ class TemplateFit():
             Plots the current fit iteration
         '''
         if(axi is None):
-            fig, axs = plt.subplots(2,1,figsize=(15,8), sharex=True)
+            # fig, axs = plt.subplots(2,1,figsize=(15,8), sharex=True)
+            fig, axs = plt.subplot_mosaic('''
+                0000
+                0000
+                1111
+                ''', figsize=(15,8))
+            print(axs)
+            axs = [axs['0'], axs['1']]
             ax = axs[0]
         else:
             fig=None
@@ -384,6 +412,7 @@ class TemplateFit():
 
         if(axi is None):
             plt.sca(axs[1])
+            axs[0].sharex(axs[1])
             residuals = self.data[1] - self.template_function(self.data[0], self.current_guess)
             plt.plot(self.data[0], residuals)
             plt.yscale(resid_scale)
