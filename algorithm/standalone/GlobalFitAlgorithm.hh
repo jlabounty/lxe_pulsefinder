@@ -29,6 +29,9 @@
 class GlobalFitAlgorithm {
   public:
     // cluster parameter information
+
+    int ding;
+
     typedef struct {
       std::size_t               index;
       double                    residualSeed;

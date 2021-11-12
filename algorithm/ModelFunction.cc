@@ -7,7 +7,7 @@
     Copyright (C) 2018 David A. Sweigart.  All rights reserved.
  */
 
-#include "ModelFunction.hh"
+#include "standalone/ModelFunction.hh"
 
 ModelFunction::ModelFunction(
   const int                                          &p_pedestalCount,
