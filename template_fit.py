@@ -13,15 +13,15 @@ class LXeTemplate():
     def __init__(self) -> None:
         pass
 
-    def form_template(self, xs, ys, weights=None, normalize=0):
+    def form_template(self, xs, ys, weights=None, normalize=0):   # Q: What are xs and ys, weights exactly? units?
         
         #shift such that the peak of the template lies at x = 0
-        these_ys = np.array(ys)
-        if(normalize == 1): # normalize by peak
-            these_ys /= np.amax(these_ys)
+        these_ys = np.array(ys)                                      
+        if(normalize == 1): # normalize by peak                  #what is the normalize variable ?
+            these_ys /= np.amax(these_ys).        
         elif(normalize == 2): # normalize by integral
             these_ys /= np.sum(these_ys)
-        these_xs = np.array(xs) - xs[ np.where(these_ys == np.amax(these_ys))[0] ][0]
+        these_xs = np.array(xs) - xs[ np.where(these_ys == np.amax(these_ys))[0] ][0]. # the actual shift along the x axis 
 
         # self.template = CubicSpline(these_xs, these_ys, 
         #             axis=0, bc_type='not-a-knot', 
